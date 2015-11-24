@@ -12,6 +12,7 @@
         <spark-version>1.5.1</spark-version>
         <scala-version>2.10.4</scala-version>
         <hadoop-client.version>2.6.2</hadoop-client.version>
+        <korean-text.version>4.2.0</korean-text.version>
     </properties>
 
     <build>
@@ -145,5 +146,11 @@
             <artifactId>hadoop-client</artifactId>
             <version>${hadoop-client.version}</version>
         </dependency>
+        <dependency>
+            <groupId>com.twitter.penguin</groupId>
+            <artifactId>korean-text-scala-2.10</artifactId>
+            <version>${korean-text.version}</version>
+        </dependency>
+
     </dependencies>
 </project>

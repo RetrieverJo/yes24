@@ -47,7 +47,6 @@ object Comparison {
             case (uid, iid) => Rating(uid.toInt, iid.toInt, 1.0)
         }
 
-
         val allItemIDs = userItem.map(_.product).distinct().collect()
         val bAllItemIDs = sc.broadcast(allItemIDs)
         val Array(train, test) = userItem.randomSplit(Array(0.9, 0.1))
@@ -61,13 +60,13 @@ object Comparison {
         println("Train Finish!")
 
         val auc = areaUnderCurve(test, bAllItemIDs, model.predict)
-        println("auc: "+auc)
+        println("auc: " + auc)
     }
 
     // 각 사용자별로 AUC를 계산하고, 평균 AUC를 반환하는 함수.
-    def areaUnderCurve(   positiveData: RDD[Rating],
-                          bAllItemIDs: Broadcast[Array[Int]],
-                          predictFunction: (RDD[(Int, Int)] => RDD[Rating])) = {
+    def areaUnderCurve(positiveData: RDD[Rating],
+                       bAllItemIDs: Broadcast[Array[Int]],
+                       predictFunction: (RDD[(Int, Int)] => RDD[Rating])) = {
 
         // Positive로 판단되는 결과들, 즉 전체 데이터에서 Cross-validation을 하기 위해 남겨둔
         // 10%의 데이터를 이용하여 Positive한 데이터로 저장한다.
