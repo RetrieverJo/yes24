@@ -111,22 +111,19 @@ object LDAUserALS {
 
         //LDA 모델 불러오기
         val ldaModel = DistributedLDAModel.load(sc, "/yes24/ldamodel/em-20t-100n")
-
-        /*
-        //LDA Training
-        val numTopics = 10
-        val lda = new LDA().setK(numTopics).setMaxIterations(10).setOptimizer("online")
-        val ldaModel = lda.run(documents)
-        */
+//        val ldaModel = DistributedLDAModel.load(sc, "/yes24/ldamodel/em")
+//        val ldaModel = DistributedLDAModel.load(sc, "/yes24/ldamodel/em-20t-200n")
 
         // Print topics, showing top-weighted 10 terms for each topic.
         val topicIndices = ldaModel.describeTopics(maxTermsPerTopic = 10)
+        var count : Int = 0
         topicIndices.foreach { case (terms, termWeights) =>
-            println("TOPIC:")
+            println("TOPIC"+count+":")
             terms.zip(termWeights).foreach { case (term, weight) =>
                 println(s"${wordArray(term.toInt)}\t$weight")
             }
             println()
+            count += 1
         }
 
         documents.unpersist()
