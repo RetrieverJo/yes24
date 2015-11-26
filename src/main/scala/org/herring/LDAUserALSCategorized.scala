@@ -3,11 +3,13 @@ package org.herring
 import com.twitter.penguin.korean.TwitterKoreanProcessor
 import com.twitter.penguin.korean.tokenizer.KoreanTokenizer.KoreanToken
 import com.twitter.penguin.korean.util.KoreanPos
-import org.apache.spark.mllib.clustering.DistributedLDAModel
+import org.apache.spark.mllib.clustering.{DistributedLDAModel, LDA}
 import org.apache.spark.mllib.linalg.Vectors
-import org.apache.spark.mllib.recommendation.Rating
+import org.apache.spark.mllib.recommendation.{ALS, MatrixFactorizationModel, Rating}
 import org.apache.spark.sql.Row
 import org.apache.spark.{SparkConf, SparkContext}
+
+import scala.collection.mutable.ArrayBuffer
 
 /**
   * LDA + User-based LDA Clustering + ALS
@@ -15,9 +17,9 @@ import org.apache.spark.{SparkConf, SparkContext}
   * ref: https://gist.github.com/jkbradley/ab8ae22a8282b2c8ce33
   *
   * @author hyunje
-  * @since   2015. 11. 23. 
+  * @since   2015. 11. 23.
   */
-object LDAUserALS {
+object LDAUserALSCategorized {
     val minLength = 2
     val rank = 10
     val numIterations = 10
@@ -37,7 +39,7 @@ object LDAUserALS {
 
         //해당 카테고리만 필터링 된 데이터
         val filters = sc.objectFile[Row]("/yes24/filters")
-        //            .filter(r => r.getAs[String]("category") == "인문")
+            .filter(r => r.getAs[String]("category") == "인문")
         //                .filter(r => r.getAs[String]("category") == "자기계발")
         //                .filter(r => r.getAs[String]("category") == "국내문학")
         //                .filter(r => r.getAs[String]("category") == "해외문학")
@@ -126,19 +128,18 @@ object LDAUserALS {
         documents.cache()
 
         //LDA 모델 직점 생성하기
-        /*
         val numTopics = 20
         val lda = new LDA().setK(numTopics).setMaxIterations(150).setCheckpointInterval(10).setOptimizer("em")
         val preLdaModel = lda.run(documents)
         val modelName = "/yes24/ldamodel/inmoon"
         preLdaModel.save(sc, modelName)
         val ldaModel = DistributedLDAModel.load(sc, modelName)
-        */
 
-        //LDA 기존 모델 불러오기
+
+        //LDA 모델 불러오기
         //        val ldaModel = DistributedLDAModel.load(sc, "/yes24/ldamodel/em-20t-100n")
         //        val ldaModel = DistributedLDAModel.load(sc, "/yes24/ldamodel/em")
-        val ldaModel = DistributedLDAModel.load(sc, "/yes24/ldamodel/em-20t-200n")
+        //        val ldaModel = DistributedLDAModel.load(sc, "/yes24/ldamodel/em-20t-200n")
 
         //LDA 수행 결과 기반의 클러스터링 수행
         val topicIndices = ldaModel.describeTopics(maxTermsPerTopic = 10)
@@ -173,26 +174,24 @@ object LDAUserALS {
 
         //각 클러스터별로 ALS 수행
         val numOfClusters = ratingForEachCluster.count().toInt
-        //미리 수행한 추천 결과 불러오기
-        val recResult = sc.objectFile[(Int, Int, Array[Rating])]("/yes24/recResult") //(Cluster#, uId, Rec)
+        //        val recResult = sc.objectFile[(Int, Int, Array[Rating])]("/yes24/recResult") //(Cluster#, uId, Rec)
 
-        /*
         val recResult = new ArrayBuffer[(Int, Int, Array[Rating])]() //(Cluster#, uId, Rec)
 
         for (cnum <- 0 until numOfClusters) {
-            println("Cluster: "+cnum)
+            println("Cluster: " + cnum)
             val ratings = ratingForEachCluster.filter(_._1 == cnum).take(1).head._2
             val ratingsRdd = sc.parallelize(ratings)
             ratingsRdd.cache()
 
-            val model:MatrixFactorizationModel = ALS.trainImplicit(ratingsRdd, rank, numIterations, lambda, alpha)
-//            val uid = ratings.head.user
-//            val rec = model.recommendProducts(uid, 10)
-//            println("rec: "+rec)
+            val model: MatrixFactorizationModel = ALS.trainImplicit(ratingsRdd, rank, numIterations, lambda, alpha)
+            //            val uid = ratings.head.user
+            //            val rec = model.recommendProducts(uid, 10)
+            //            println("rec: "+rec)
 
             val users = bUserCluster.value.filter(_._2 == cnum).map(_._1.toInt)
 
-            for(uid <- users) {
+            for (uid <- users) {
                 val rec = model.recommendProducts(uid, rank)
                 recResult += ((cnum, uid, rec))
             }
@@ -200,19 +199,15 @@ object LDAUserALS {
             ratingsRdd.unpersist()
         }
 
-                val recResultRdd = sc.parallelize(recResult)
+        val recResultRdd = sc.parallelize(recResult).map(l => (l._2, l._1, l._3))
 
-*/
         //(user, cluster, ratings)
-        val recResultRdd = recResult.map(l => (l._2, l._1, l._3))
         //        recResultRdd.saveAsObjectFile("/yes24/recResult")
         recResultRdd.cache()
 
         //        val recResultByUser = recResultRdd.groupBy(_._2)
         //        recResultByUser.take(1).foreach(_._2.foreach(l => println("user: "+l._2+", cluster: "+l._1+", count: "+l._3.length)))
 
-
-        //추천 결과를 이용해 클러스터별 가중치를 이용한 추천 계산
         val userDistSum = userTopicDistribution.map { dist => (dist._1.toInt, dist._3.sum) }.collectAsMap()
         val bUserDistSum = sc.broadcast(userDistSum)
         val recResultTuple = recResultRdd.map(l => ((l._1, l._2), l._3))
@@ -228,7 +223,6 @@ object LDAUserALS {
             (uid, sortedItems)
         }
 
-        //최종 추천 계산
         val filteredRecommendationResult = finalRecommendationResult.flatMap { case (uid, sortedItems) =>
             val oId = userNIdOId.getOrElse(uid.toString, "-")
             sortedItems.map { case (r) =>
@@ -237,10 +231,9 @@ object LDAUserALS {
             }
         }
 
-        //추천 결과 저장
         filteredRecommendationResult.map { r =>
             r._1 + Console.RED + r._2 + Console.RED + r._3
-        }.coalesce(1).saveAsTextFile("/yes24/final_all")
+        }.coalesce(1).saveAsTextFile("/yes24/final_inmoon")
 
         /*
         finalRecommendationResult.take(5).foreach(r =>
