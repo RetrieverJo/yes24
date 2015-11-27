@@ -5,9 +5,11 @@ import com.twitter.penguin.korean.tokenizer.KoreanTokenizer.KoreanToken
 import com.twitter.penguin.korean.util.KoreanPos
 import org.apache.spark.mllib.clustering.DistributedLDAModel
 import org.apache.spark.mllib.linalg.Vectors
-import org.apache.spark.mllib.recommendation.Rating
+import org.apache.spark.mllib.recommendation.{ALS, MatrixFactorizationModel, Rating}
 import org.apache.spark.sql.Row
 import org.apache.spark.{SparkConf, SparkContext}
+
+import scala.collection.mutable.ArrayBuffer
 
 /**
   * LDA + User-based LDA Clustering + ALS
@@ -129,7 +131,7 @@ object LDAUserALS {
         val numTopics = 20
         val lda = new LDA().setK(numTopics).setMaxIterations(150).setCheckpointInterval(10).setOptimizer("em")
         val preLdaModel = lda.run(documents)
-        val modelName = "/yes24/ldamodel/inmoon"
+        val modelName = "/yes24/ldamodel/all"
         preLdaModel.save(sc, modelName)
         val ldaModel = DistributedLDAModel.load(sc, modelName)
         */
@@ -173,43 +175,36 @@ object LDAUserALS {
         //각 클러스터별로 ALS 수행
         val numOfClusters = ratingForEachCluster.count().toInt
         //미리 수행한 추천 결과 불러오기
-        val recResult = sc.objectFile[(Int, Int, Array[Rating])]("/yes24/recResult") //(Cluster#, uId, Rec)
+        //        val recResult = sc.objectFile[(Int, Int, Array[Rating])]("/yes24/recResult") //(Cluster#, uId, Rec)
+        //        val recResultRdd = recResult.map(l => (l._2, l._1, l._3))
 
-        /*
+
+        //새로 수행하고자 할 떄는 아래 코드 수행
         val recResult = new ArrayBuffer[(Int, Int, Array[Rating])]() //(Cluster#, uId, Rec)
 
         for (cnum <- 0 until numOfClusters) {
-            println("Cluster: "+cnum)
+            println("Cluster: " + cnum)
             val ratings = ratingForEachCluster.filter(_._1 == cnum).take(1).head._2
             val ratingsRdd = sc.parallelize(ratings)
             ratingsRdd.cache()
 
-            val model:MatrixFactorizationModel = ALS.trainImplicit(ratingsRdd, rank, numIterations, lambda, alpha)
-//            val uid = ratings.head.user
-//            val rec = model.recommendProducts(uid, 10)
-//            println("rec: "+rec)
-
+            val model: MatrixFactorizationModel = ALS.trainImplicit(ratingsRdd, rank, numIterations, lambda, alpha)
             val users = bUserCluster.value.filter(_._2 == cnum).map(_._1.toInt)
 
-            for(uid <- users) {
+            for (uid <- users) {
                 val rec = model.recommendProducts(uid, rank)
                 recResult += ((cnum, uid, rec))
             }
 
             ratingsRdd.unpersist()
         }
+        val recResultRdd = sc.parallelize(recResult)
 
-                val recResultRdd = sc.parallelize(recResult)
 
-*/
+
         //(user, cluster, ratings)
-        val recResultRdd = recResult.map(l => (l._2, l._1, l._3))
-        //        recResultRdd.saveAsObjectFile("/yes24/recResult")
+//        recResultRdd.saveAsObjectFile("/yes24/data/recResult")
         recResultRdd.cache()
-
-        //        val recResultByUser = recResultRdd.groupBy(_._2)
-        //        recResultByUser.take(1).foreach(_._2.foreach(l => println("user: "+l._2+", cluster: "+l._1+", count: "+l._3.length)))
-
 
         //추천 결과를 이용해 클러스터별 가중치를 이용한 추천 계산
         val userDistSum = userTopicDistribution.map { dist => (dist._1.toInt, dist._3.sum) }.collectAsMap()
