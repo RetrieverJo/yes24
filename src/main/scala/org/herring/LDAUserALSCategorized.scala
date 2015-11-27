@@ -34,7 +34,6 @@ object LDAUserALSCategorized {
     def main(args: Array[String]) {
         val conf = new SparkConf()
             .setAppName("Yes24 LDA + User Clustering + ALS")
-            .setMaster("spark://Hyunje-macbook:7077")
             .set("spark.default.parallelism", "4")
 
         val sc = new SparkContext(conf)
