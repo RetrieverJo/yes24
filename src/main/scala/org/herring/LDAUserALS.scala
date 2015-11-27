@@ -33,17 +33,17 @@ object LDAUserALS {
             .set("spark.default.parallelism", "4")
 
         val sc = new SparkContext(conf)
-        sc.setCheckpointDir("/yes24/checkpoint")
+        sc.setCheckpointDir("/yes24/data/checkpoint")
 
         //해당 카테고리만 필터링 된 데이터
-        val filters = sc.objectFile[Row]("/yes24/filters")
+        val filters = sc.objectFile[Row]("/yes24/data/filters")
         //            .filter(r => r.getAs[String]("category") == "인문")
         //                .filter(r => r.getAs[String]("category") == "자기계발")
         //                .filter(r => r.getAs[String]("category") == "국내문학")
         //                .filter(r => r.getAs[String]("category") == "해외문학")
         //                .filter(r => r.getAs[String]("category") == "종교")
 
-        val users = sc.textFile("/yes24/uidIndex").map { line =>
+        val users = sc.textFile("/yes24/data/uidIndex").map { line =>
             val tokens = line.split("\\u001B\\[31m")
             val nid = tokens.apply(0)
             val oid = tokens.apply(1)
@@ -53,7 +53,7 @@ object LDAUserALS {
         val userNIdOId = users.map(_.swap).collectAsMap()
 
         //아이템 정보 로드
-        val items = sc.textFile("/yes24/bookWithId").map { line =>
+        val items = sc.textFile("/yes24/data/bookWithId").map { line =>
             val tokens = line.split("\\u001B\\[31m")
             val id = tokens.apply(0)
             val title = tokens.apply(1).trim
@@ -64,7 +64,7 @@ object LDAUserALS {
         val bookIdTitle = items.map(_.swap).collectAsMap()
 
         //책 정보(소개 정보 로드)
-        val bookData = sc.textFile("/yes24/bookData").map { line =>
+        val bookData = sc.textFile("/yes24/data/bookData").map { line =>
             val tokens = line.split("\\u001B\\[31m")
             val bookId = tokens.apply(0)
             val title = tokens.apply(1)
@@ -138,7 +138,7 @@ object LDAUserALS {
         //LDA 기존 모델 불러오기
         //        val ldaModel = DistributedLDAModel.load(sc, "/yes24/ldamodel/em-20t-100n")
         //        val ldaModel = DistributedLDAModel.load(sc, "/yes24/ldamodel/em")
-        val ldaModel = DistributedLDAModel.load(sc, "/yes24/ldamodel/em-20t-200n")
+        val ldaModel = DistributedLDAModel.load(sc, "/yes24/data/ldamodel/em-20t-200n")
 
         //LDA 수행 결과 기반의 클러스터링 수행
         val topicIndices = ldaModel.describeTopics(maxTermsPerTopic = 10)
@@ -240,7 +240,7 @@ object LDAUserALS {
         //추천 결과 저장
         filteredRecommendationResult.map { r =>
             r._1 + Console.RED + r._2 + Console.RED + r._3
-        }.coalesce(1).saveAsTextFile("/yes24/final_all")
+        }.coalesce(1).saveAsTextFile("/yes24/final")
 
         /*
         finalRecommendationResult.take(5).foreach(r =>
