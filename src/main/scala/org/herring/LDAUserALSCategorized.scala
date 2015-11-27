@@ -13,6 +13,7 @@ import scala.collection.mutable.ArrayBuffer
 
 /**
   * LDA + User-based LDA Clustering + ALS
+  * Categorized
   *
   * ref: https://gist.github.com/jkbradley/ab8ae22a8282b2c8ce33
   *
@@ -22,10 +23,12 @@ import scala.collection.mutable.ArrayBuffer
 object LDAUserALSCategorized {
     val minLength = 2
     val rank = 10
-    val numIterations = 10
+    val numIterations = 30
     val alpha = 0.01
     val lambda = 0.01
     val k: Int = 3
+
+    val pathName = "foreign2"
 
 
     def main(args: Array[String]) {
@@ -35,17 +38,17 @@ object LDAUserALSCategorized {
             .set("spark.default.parallelism", "4")
 
         val sc = new SparkContext(conf)
-        sc.setCheckpointDir("/yes24/checkpoint")
+        sc.setCheckpointDir("/yes24/data/checkpoint")
 
         //해당 카테고리만 필터링 된 데이터
-        val filters = sc.objectFile[Row]("/yes24/filters")
+        val filters = sc.objectFile[Row]("/yes24/data/filters")
             .filter(r => r.getAs[String]("category") == "인문")
-        //                .filter(r => r.getAs[String]("category") == "자기계발")
-        //                .filter(r => r.getAs[String]("category") == "국내문학")
-        //                .filter(r => r.getAs[String]("category") == "해외문학")
-        //                .filter(r => r.getAs[String]("category") == "종교")
+//                        .filter(r => r.getAs[String]("category") == "자기계발")
+//                        .filter(r => r.getAs[String]("category") == "국내문학")
+//                        .filter(r => r.getAs[String]("category") == "해외문학")
+//                        .filter(r => r.getAs[String]("category") == "종교")
 
-        val users = sc.textFile("/yes24/uidIndex").map { line =>
+        val users = sc.textFile("/yes24/data/uidIndex").map { line =>
             val tokens = line.split("\\u001B\\[31m")
             val nid = tokens.apply(0)
             val oid = tokens.apply(1)
@@ -55,7 +58,7 @@ object LDAUserALSCategorized {
         val userNIdOId = users.map(_.swap).collectAsMap()
 
         //아이템 정보 로드
-        val items = sc.textFile("/yes24/bookWithId").map { line =>
+        val items = sc.textFile("/yes24/data/bookWithId").map { line =>
             val tokens = line.split("\\u001B\\[31m")
             val id = tokens.apply(0)
             val title = tokens.apply(1).trim
@@ -66,7 +69,7 @@ object LDAUserALSCategorized {
         val bookIdTitle = items.map(_.swap).collectAsMap()
 
         //책 정보(소개 정보 로드)
-        val bookData = sc.textFile("/yes24/bookData").map { line =>
+        val bookData = sc.textFile("/yes24/data/bookData").map { line =>
             val tokens = line.split("\\u001B\\[31m")
             val bookId = tokens.apply(0)
             val title = tokens.apply(1)
@@ -129,9 +132,9 @@ object LDAUserALSCategorized {
 
         //LDA 모델 직점 생성하기
         val numTopics = 20
-        val lda = new LDA().setK(numTopics).setMaxIterations(150).setCheckpointInterval(10).setOptimizer("em")
+        val lda = new LDA().setK(numTopics).setMaxIterations(220).setCheckpointInterval(10).setOptimizer("em")
         val preLdaModel = lda.run(documents)
-        val modelName = "/yes24/ldamodel/inmoon"
+        val modelName = "/yes24/data/ldamodel/"+pathName
         preLdaModel.save(sc, modelName)
         val ldaModel = DistributedLDAModel.load(sc, modelName)
 
@@ -233,7 +236,7 @@ object LDAUserALSCategorized {
 
         filteredRecommendationResult.map { r =>
             r._1 + Console.RED + r._2 + Console.RED + r._3
-        }.coalesce(1).saveAsTextFile("/yes24/final_inmoon")
+        }.coalesce(1).saveAsTextFile("/yes24/final-"+pathName)
 
         /*
         finalRecommendationResult.take(5).foreach(r =>
