@@ -5,6 +5,7 @@ import com.twitter.penguin.korean.tokenizer.KoreanTokenizer.KoreanToken
 import com.twitter.penguin.korean.util.KoreanPos
 import org.apache.spark.mllib.clustering.{DistributedLDAModel, LDA}
 import org.apache.spark.mllib.linalg.Vectors
+import org.apache.spark.mllib.linalg.distributed.RowMatrix
 import org.apache.spark.mllib.recommendation.{ALS, MatrixFactorizationModel, Rating}
 import org.apache.spark.sql.Row
 import org.apache.spark.{SparkConf, SparkContext}
@@ -12,8 +13,8 @@ import org.apache.spark.{SparkConf, SparkContext}
 import scala.collection.mutable.ArrayBuffer
 
 /**
-  * LDA + User-based LDA Clustering + ALS
-  * Categorized
+  * LDA + User-based LDA Clustering + ALS.
+  * 각 카테고리별로 수행하고 그 결과를 저장하는 과정에 대한 클래스.
   *
   * ref: https://gist.github.com/jkbradley/ab8ae22a8282b2c8ce33
   *
@@ -30,7 +31,6 @@ object LDAUserALSCategorized {
 
     val pathName = "foreign2"
 
-
     def main(args: Array[String]) {
         val conf = new SparkConf()
             .setAppName("Yes24 LDA + User Clustering + ALS")
@@ -41,7 +41,7 @@ object LDAUserALSCategorized {
 
         //해당 카테고리만 필터링 된 데이터
         val filters = sc.objectFile[Row]("/yes24/data/filters")
-            .filter(r => r.getAs[String]("category") == "인문")
+                        .filter(r => r.getAs[String]("category") == "인문")
 //                        .filter(r => r.getAs[String]("category") == "자기계발")
 //                        .filter(r => r.getAs[String]("category") == "국내문학")
 //                        .filter(r => r.getAs[String]("category") == "해외문학")
@@ -204,7 +204,7 @@ object LDAUserALSCategorized {
         val recResultRdd = sc.parallelize(recResult).map(l => (l._2, l._1, l._3))
 
         //(user, cluster, ratings)
-        //        recResultRdd.saveAsObjectFile("/yes24/recResult")
+//                recResultRdd.saveAsObjectFile("/yes24/recResult")
         recResultRdd.cache()
 
         //        val recResultByUser = recResultRdd.groupBy(_._2)

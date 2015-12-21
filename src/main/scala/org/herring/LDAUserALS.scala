@@ -12,7 +12,8 @@ import org.apache.spark.{SparkConf, SparkContext}
 import scala.collection.mutable.ArrayBuffer
 
 /**
-  * LDA + User-based LDA Clustering + ALS
+  * LDA + User-based LDA Clustering + ALS.
+  * 여섯개 카테고리를 통합하여 추천을 수행하는 과정에 대한 클래스.
   *
   * ref: https://gist.github.com/jkbradley/ab8ae22a8282b2c8ce33
   *
