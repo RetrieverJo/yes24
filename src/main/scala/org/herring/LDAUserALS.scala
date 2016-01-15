@@ -28,7 +28,6 @@ object LDAUserALS {
     val lambda = 0.01
     val k: Int = 3
 
-
     def main(args: Array[String]) {
         val conf = new SparkConf()
             .setAppName("Yes24 LDA + User Clustering + ALS")
@@ -70,12 +69,11 @@ object LDAUserALS {
             val tokens = line.split("\\u001B\\[31m")
             val bookId = tokens.apply(0)
             val title = tokens.apply(1)
-            val isbn = tokens.apply(2)
-            val yes24id = tokens.apply(3)
+//            val isbn = tokens.apply(2)
+//            val yes24id = tokens.apply(3)
             val intro = if (tokens.length == 5) tokens.apply(4) else title
             (bookId, intro)
         }
-        val bookDataMap = bookData.collectAsMap()
 
         //책 소개 형태소 분석
         val bookStemmed = bookData.map { case (id, intro) =>
@@ -110,7 +108,6 @@ object LDAUserALS {
             val result = temp.fold(Seq[String]()) { (a, b) => a ++ b }
             result
         }
-
         userNouns.cache()
 
         //LDA와 클러스터링에 사용될 사용자별 Document 생성
@@ -124,7 +121,6 @@ object LDAUserALS {
             }
             (id.toLong, Vectors.sparse(bWordMap.value.size, counts.toSeq))
         }
-
         documents.cache()
 
         //LDA 모델 직점 생성하기
@@ -242,7 +238,6 @@ object LDAUserALS {
             r._2.foreach(i => println("user: " + r._1 + ", item: " + i.product + ", score: " + i.rating))
         )
         */
-
 
         documents.unpersist()
         userNouns.unpersist()
