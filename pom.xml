@@ -6,7 +6,7 @@
 
     <groupId>com.hyunje.jo</groupId>
     <artifactId>yes24</artifactId>
-    <version>0.1</version>
+    <version>1.0</version>
 
     <properties>
         <spark-version>1.5.1</spark-version>
