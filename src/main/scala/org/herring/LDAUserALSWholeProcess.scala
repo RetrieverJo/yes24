@@ -46,6 +46,8 @@ object LDAUserALSWholeProcess {
     val bookWithIdPath: String = "/yes24/data/bookWithId"
     val bookDataPath: String = "/yes24/data/bookData"
     val finalResultPath: String = "/yes24/result/final"
+    val ldaModelTargetPath = "/yes24/ldamodel/all"
+
     val delimiter: String = "\\u001B\\[31m"
 
     def main(args: Array[String]) {
@@ -59,13 +61,15 @@ object LDAUserALSWholeProcess {
         //        PreProcessing 결과를 불러오는 과정
         //==============================================
         println("Load pre-processing result")
+        println()
 
+        //(해당 카테고리로 필터링된 결과, 사용자의 ID 정보, 아이템 ID 정보, 책 소개 데이터)
         val (filters, users, items, bookData) = loadPreprocessing(sc)
 
-        val userOIdNId = users.collectAsMap()
-        val userNIdOId = users.map(_.swap).collectAsMap()
-        val bookTitleId = items.collectAsMap()
-        val bookIdTitle = items.map(_.swap).collectAsMap()
+        val userOIdNId = users.collectAsMap()   //(이전 사용자 ID, 새로운 사용자 ID)
+        val userNIdOId = users.map(_.swap).collectAsMap()   //(새로운 사용자 ID, 이전 사용자 ID)
+        val bookTitleId = items.collectAsMap()  //(책 제목, 책 ID)
+        val bookIdTitle = items.map(_.swap).collectAsMap()  //(책 ID, 책 제목)
 
         println("Finished loading pre-processing result")
         println()
@@ -76,6 +80,7 @@ object LDAUserALSWholeProcess {
         //==============================================
 
         println("Preparing LDA")
+        println()
 
         //책 소개 형태소 분석
         val bookStemmed = bookData.map { case (id, intro) =>
@@ -84,32 +89,29 @@ object LDAUserALSWholeProcess {
             val stemmed: Seq[KoreanToken] = TwitterKoreanProcessor.stem(tokens)
 
             val nouns = stemmed.filter(p => p.pos == KoreanPos.Noun).map(_.text).filter(_.length >= minLength)
-            (id, nouns)
+            (id, nouns) //(책 Id, Iter[책 소개에 등장한 명사])
         }
-        val stemmedMap = bookStemmed.collectAsMap()
+        val stemmedMap = bookStemmed.collectAsMap() //(책 Id, Seq[명사])
         val bStemmedMap = sc.broadcast(stemmedMap)
 
-        //LDA에 쓰일 Corpus 생성작업
-        val wordCount = bookStemmed.flatMap(data => data._2.map((_, 1))).reduceByKey(_ + _).sortBy(-_._2)
-        //        val bWordCount = sc.broadcast(wordCount)
-        val wordArray = wordCount.map(_._1).collect()
-        //        val bWordArray = sc.broadcast(wordArray)
-        val wordMap = wordCount.map(_._1).zipWithIndex().mapValues(_.toInt).collectAsMap()
+        //LDA에 쓰일 Corpus 생성작업 - 단어별 Wordcount
+        val wordCount = bookStemmed.flatMap(data => data._2.map((_, 1))).reduceByKey(_ + _).sortBy(-_._2) //(단어, Count)
+        val wordMap = wordCount.map(_._1).zipWithIndex().mapValues(_.toInt).collectAsMap() //(단어, 단어 ID)
         val bWordMap = sc.broadcast(wordMap)
 
         //사용자가 구매한 책들 추출
         val userItem = filters.map { data =>
             val uid = userOIdNId.getOrElse(data.getAs[Int]("uid").toString.trim, "-")
             val iid = bookTitleId.getOrElse(data.getAs[String]("title").trim, "-")
-            (uid, iid)
+            (uid, iid)  //(사용자 ID, 구매한 책 ID)
         }.distinct()
 
-        //사용자가 구매한 책의 소개글을 합한 RDD 생성
+        //사용자가 구매한 모든 책의 소개글의 명사를 합한 RDD 생성
         val userNouns = userItem.groupByKey().mapValues { v =>
             val temp: Iterable[Seq[String]] = v.map(bStemmedMap.value.getOrElse(_, Seq[String]()))
             val result = temp.fold(Seq[String]()) { (a, b) => a ++ b }
             result
-        }
+        }   //(사용자 ID, Seq[명사])
 
         //LDA와 클러스터링에 사용될 사용자별 Document 생성
         val documents = userNouns.map { case (id, nouns) =>
@@ -120,7 +122,8 @@ object LDAUserALSWholeProcess {
                     counts(idx) = counts.getOrElse(idx, 0.0) + 1.0
                 }
             }
-            (id.toLong, Vectors.sparse(bWordMap.value.size, counts.toSeq))
+            //Creates a sparse vector using unordered (index, value) pairs.
+            (id.toLong, Vectors.sparse(bWordMap.value.size, counts.toSeq))  //(사용자 ID, Vector[각 단어의 Count])
         }
 
         userNouns.persist(StorageLevel.MEMORY_AND_DISK)
@@ -129,12 +132,12 @@ object LDAUserALSWholeProcess {
         println("Finished preparing LDA")
         println()
 
-
         //==============================================
         //        LDA를 이용한 클러스터링을 수행하는 과정
         //==============================================
 
         println("Run LDA")
+        println()
 
         val ldaModel: DistributedLDAModel = runLDA(sc, documents)
 
@@ -144,12 +147,11 @@ object LDAUserALSWholeProcess {
 
         val (userTopicDistribution, clusteringResult, userCluster) = ldaResultBasedClustering(ldaModel)
 
-        val bUserCluster = sc.broadcast(userCluster.collect())
+        val bUserCluster = sc.broadcast(userCluster.collect())  //Array[(사용자 ID, Topic ID)]
         userCluster.persist(StorageLevel.MEMORY_AND_DISK)
-        val groupedUserCluster = userCluster.groupByKey()
+        val groupedUserCluster = userCluster.groupByKey()   //RDD[(사용자 ID, Iter[Topic ID])]
         println("Finished running LDA")
         println()
-
 
         //==============================================
         //            각 클러스터별로 추천을 수행
@@ -161,21 +163,20 @@ object LDAUserALSWholeProcess {
         ratingForEachCluster.persist(StorageLevel.MEMORY_AND_DISK)
 
         println("Running recommendation for ech cluster")
+        println()
 
         //각 클러스터별로 ALS 수행
-
         val recResultRdd = runRecommendation(sc, bUserCluster, ratingForEachCluster)
-        recResultRdd.persist(StorageLevel.MEMORY_AND_DISK)
+        recResultRdd.persist(StorageLevel.MEMORY_AND_DISK) //(사용자 ID, Cluster ID, 추천 결과 Array[Rating])
 
         println("Finished running recommendation")
         println()
-
 
         //==============================================
         //            각 사용자별로 최종 추천 계산
         //==============================================
 
-        println("각 사용자별 최종 추천 계산")
+        println("Calculate final recommendation for each user")
 
         val filteredRecommendationResult = finalRecommendation(
             userTopicDistribution,
@@ -184,11 +185,11 @@ object LDAUserALSWholeProcess {
             userNIdOId,
             bookIdTitle)
 
-        println("각 사용자별 최종 추천 계산 완료")
+        println("Finished calculating final recommendation for each user")
         println()
 
         //추천 결과 저장
-        println("추천 결과 저장")
+        println("Saving final recommendation result")
         filteredRecommendationResult.map { r =>
             r._1 + Console.RED + r._2 + Console.RED + r._3
         }.coalesce(1).saveAsTextFile(finalResultPath)
@@ -236,11 +237,11 @@ object LDAUserALSWholeProcess {
 
         //LDA 수행
         val lda = new LDA().setK(numTopics).setMaxIterations(maxLDAIters).setCheckpointInterval(10).setOptimizer("em")
-        val preLdaModel = lda.run(documents)
         //일단 수행한 LDA 모델 저장
-        val modelTargetPath = "/yes24/ldamodel/all"
-        preLdaModel.save(sc, modelTargetPath)
-        val ldaModel = DistributedLDAModel.load(sc, modelTargetPath)
+        val preLdaModel = lda.run(documents)
+
+        preLdaModel.save(sc, ldaModelTargetPath)
+        val ldaModel = DistributedLDAModel.load(sc, ldaModelTargetPath)
         ldaModel
     }
 
@@ -248,12 +249,11 @@ object LDAUserALSWholeProcess {
     : (RDD[(Long, Array[Int], Array[Double])], RDD[(Long, Int, Double)], RDD[(Long, Int)]) = {
 
         //LDA 수행 결과 기반의 클러스터링 수행
-        val topicIndices = ldaModel.describeTopics(maxTermsPerTopic = topClusterNum)
-        val userTopicDistribution = ldaModel.topTopicsPerDocument(topClusterNum)
+        val userTopicDistribution = ldaModel.topTopicsPerDocument(topClusterNum) //RDD[(사용자 ID, Array[Topic ID], Array[Topic과의 연관도]]
         val clusteringResult = userTopicDistribution.flatMap { case (uid, tids, tweights) =>
             tids.map(t => (uid, t)).zip(tweights).map(t => (t._1._1, t._1._2, t._2))
-        }
-        val userCluster = clusteringResult.map(i => (i._1, i._2))
+        }   //RDD[(사용자 ID, Topic ID, Topic과의 연관도)]
+        val userCluster = clusteringResult.map(i => (i._1, i._2))   //RDD[(사용자 ID, Topic ID)]
         (userTopicDistribution, clusteringResult, userCluster)
     }
 
@@ -261,17 +261,18 @@ object LDAUserALSWholeProcess {
                               groupedUserCluster: RDD[(Long, Iterable[Int])]): RDD[(Int, Array[Rating])] = {
 
         //각 클러스터별로 추천을 수행하기 위한 데이터 Filtering
-        // TODO: Join으로 해결하는 것이 효과적인가, 아니면 User-Ratings 의 Map을 구성한 후 Broadcasting 하여 처리하는것이 나은가?
         //ratingForEachCluster: 각 클러스터별로 (클러스터 Id, Array[Ratings])
         val ratingForEachCluster = userItem.map(i => (i._1.toLong, Rating(i._1.toInt, i._2.toInt, 1.0))).groupByKey()
-                .join(groupedUserCluster)
+                .join(groupedUserCluster)   //RDD[(사용자 ID, Iter[Rating])] + RDD[(사용자 ID, Iter[Cluster ID])]
                 .flatMap { uidRatingCluster =>
                     val uid = uidRatingCluster._1
                     val ratings = uidRatingCluster._2._1.toSeq
                     val clusters = uidRatingCluster._2._2
-                    clusters.map(cnum => (cnum, ratings))
-                }.groupByKey().mapValues(_.reduce((a, b) => a ++ b)).mapValues(_.toArray)
-        ratingForEachCluster
+                    clusters.map(cnum => (cnum, ratings))   //(Cluster ID, Seq[Rating])을 FlatMap 으로 생성
+                }.groupByKey()  //(Cluster ID, Iter[Seq[Rating]])
+                .mapValues(_.reduce((a, b) => a ++ b))  //(Cluster ID, Seq[Rating])
+                .mapValues(_.toArray)   //(Cluster ID, Array[Rating])
+        ratingForEachCluster    //각 클러스터에 해당된 사람들이 구매한 아이템을 이용한 Rating 정보
     }
 
     def runRecommendation(sc: SparkContext,
@@ -279,23 +280,25 @@ object LDAUserALSWholeProcess {
                           ratingForEachCluster: RDD[(Int, Array[Rating])]): RDD[(Int, Int, Array[Rating])] = {
 
         val numOfClusters = ratingForEachCluster.count().toInt
-        val recResult = new ArrayBuffer[(Int, Int, Array[Rating])]() //(Cluster#, uId, Rec)
+        val recResult = new ArrayBuffer[(Int, Int, Array[Rating])]()
 
         for (cnum <- 0 until numOfClusters) {
-            val ratings = ratingForEachCluster.filter(_._1 == cnum).take(1).head._2
+            val ratings = ratingForEachCluster.filter(_._1 == cnum).take(1).head._2 //현재 클러스터에 해당하는 Rating만 추출
             val ratingsRdd = sc.parallelize(ratings)
             ratingsRdd.persist(StorageLevel.MEMORY_AND_DISK)
 
+            //추천 수행
             val model: MatrixFactorizationModel = ALS.trainImplicit(ratingsRdd, rank, numRecIterations, lambda, alpha)
-            val users = bUserCluster.value.filter(_._2 == cnum).map(_._1.toInt)
+            val users = bUserCluster.value.filter(_._2 == cnum).map(_._1.toInt) //현재 클러스터에 해당하는 사용자 추출
 
+            //각 사용자별로 추천 결과 생성
             for (uid <- users) {
-                val rec = model.recommendProducts(uid, rank)
-                recResult += ((cnum, uid, rec))
+                val rec = model.recommendProducts(uid, rank)    //Array[Rating]
+                recResult += ((uid, cnum, rec)) //Array[(사용자 ID, Cluster ID, 추천 결과 Array[Rating])]
             }
             ratingsRdd.unpersist()
         }
-        val recResultRdd = sc.parallelize(recResult).map(l => (l._2, l._1, l._3))
+        val recResultRdd = sc.parallelize(recResult)
         recResultRdd
     }
 
@@ -306,17 +309,19 @@ object LDAUserALSWholeProcess {
                             bookIdTitle: scala.collection.Map[String, String]): RDD[(String, String, Double)] = {
 
         //추천 결과와 클러스터별 가중치를 이용한 추천 계산
-        val userDistSum = userTopicDistribution.map { dist => (dist._1.toInt, dist._3.sum) }.collectAsMap()
-        val recResultTuple = recResultRdd.map(l => ((l._1, l._2), l._3))
+        val userDistSum = userTopicDistribution.map { dist => (dist._1.toInt, dist._3.sum) }.collectAsMap() //가중평균의 분모, (사용자 ID, 가중치들의 합)
+        val recResultTuple = recResultRdd.map(l => ((l._1, l._2), l._3))    //((사용자 ID, Cluster ID), 아이템 Array[Rating])
+        //((사용자 ID, Cluster ID), 유사도) JOIN ((사용자 ID, Cluster ID), Array[Rating])
         val userItemSim = clusteringResult.map(l => ((l._1.toInt, l._2), l._3)).join(recResultTuple)
-        val finalRecommendationResult = userItemSim.flatMap { case ((uid, cid), (dist, ratings)) =>
-            ratings.map(r => ((uid, r.product), r.rating * dist))
-        }.groupByKey().map { case ((uid, iid), ratings) =>
-            val itemSum = ratings.sum
-            val distSum = userDistSum(uid)
-            Rating(uid, iid, itemSum / distSum)
-        }.groupBy(_.user).map { case (uid, itemRatings) =>
-            val sortedItems = itemRatings.toArray.sortBy(-_.rating).take(rank)
+        val finalRecommendationResult = userItemSim.flatMap { case ((uid, cid), (sim, ratings)) =>  //((사용자 ID, Cluster ID), (유사도, 아이템))
+            ratings.map(r => ((uid, r.product), r.rating * sim))    //((사용자 ID, 아이템 ID), 아이템에 대한 Rating 추정치 * Cluster와의 유사도))
+        }.groupByKey().map { case ((uid, iid), ratings) =>  //(사용자 ID, 아이템 ID)를 Key 로 하여 reduce
+            val itemSum = ratings.sum   //아이템에 대한 Rating 추정치 * 유사도의 합
+            //TODO: 이부분 다시 검토해볼것. 유사도의 합을 그대로 사용 가능한 것인가?
+            val distSum = userDistSum(uid)  //모든 유사도의 합
+            Rating(uid, iid, itemSum / distSum) //가중평균 계산 후 Rating 결과를 Rating 객체로 Wrapping
+        }.groupBy(_.user).map { case (uid, itemRatings) =>  //사용자 별로 추천 받은 아이템들을 reduce
+            val sortedItems = itemRatings.toArray.sortBy(-_.rating).take(rank)  //내림차순으로 정렬하여 상위 N개 추출
             (uid, sortedItems)
         }
 
@@ -324,7 +329,7 @@ object LDAUserALSWholeProcess {
         val filteredRecommendationResult = finalRecommendationResult.flatMap { case (uid, sortedItems) =>
             val oId = userNIdOId.getOrElse(uid.toString, "-")
             sortedItems.map { case (r) =>
-                val title = bookIdTitle.getOrElse(r.product.toString, "-")
+                val title = bookIdTitle.getOrElse(r.product.toString, "-")  //지금까지 계산했던 아이템의 ID를 기존의 아이템 ID로 변경
                 (oId, title, r.rating)
             }
         }
