@@ -209,6 +209,12 @@ object LDAUserALSWholeProcess {
 
         //해당 카테고리만 필터링 된 결과
         val filters = sc.objectFile[Row](filtersPath)
+        //                .filter(r => r.getAs[String]("category") == "인문")
+        //                .filter(r => r.getAs[String]("category") == "자기계발")
+        //                .filter(r => r.getAs[String]("category") == "국내문학")
+        //                .filter(r => r.getAs[String]("category") == "해외문학")
+        //                .filter(r => r.getAs[String]("category") == "종교")
+
 
         //사용자 ID의 인덱싱 결과
         val users = sc.textFile(uidIndexPath).map { line =>
