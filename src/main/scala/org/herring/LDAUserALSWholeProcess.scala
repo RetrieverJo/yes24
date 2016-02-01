@@ -317,7 +317,6 @@ object LDAUserALSWholeProcess {
             ratings.map(r => ((uid, r.product), r.rating * sim))    //((사용자 ID, 아이템 ID), 아이템에 대한 Rating 추정치 * Cluster와의 유사도))
         }.groupByKey().map { case ((uid, iid), ratings) =>  //(사용자 ID, 아이템 ID)를 Key 로 하여 reduce
             val itemSum = ratings.sum   //아이템에 대한 Rating 추정치 * 유사도의 합
-            //TODO: 이부분 다시 검토해볼것. 유사도의 합을 그대로 사용 가능한 것인가?
             val distSum = userDistSum(uid)  //모든 유사도의 합
             Rating(uid, iid, itemSum / distSum) //가중평균 계산 후 Rating 결과를 Rating 객체로 Wrapping
         }.groupBy(_.user).map { case (uid, itemRatings) =>  //사용자 별로 추천 받은 아이템들을 reduce
