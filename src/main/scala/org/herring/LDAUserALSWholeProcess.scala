@@ -32,22 +32,28 @@ import scala.collection.mutable.ArrayBuffer
   * @since 1/14/16, 2:46 PM.
   */
 object LDAUserALSWholeProcess {
-    val minLength = 2
-    val rank = 10
-    val numRecIterations = 10
-    val alpha = 0.01
-    val lambda = 0.01
-    val topClusterNum: Int = 3
-    val numTopics = 20
-    val maxLDAIters: Int = 150
+    val minLength = 2           //명사의 최소 길이
+    val rank = 10               //한 사용자당 최대 추천 갯수
+    val numRecIterations = 10   //ALS 수행 시 반복 횟수
+    val alpha = 0.01            //ALS Hyper-parameter
+    val lambda = 0.01           //ALD Hyper-parameter
+    val topClusterNum: Int = 3  //한 사용자당 고려할 클러스터 갯수
+    val numTopics = 20          //Topic Modeling을 수행할 때 생성할 Topic의 갯수
+    val maxLDAIters: Int = 150  //LDA 수행 시 반복 횟수
 
+    //Pre-processing 결과가 저장된 위치
     val filtersPath: String = "/yes24/data/filters"
     val uidIndexPath: String = "/yes24/data/uidIndex"
     val bookWithIdPath: String = "/yes24/data/bookWithId"
     val bookDataPath: String = "/yes24/data/bookData"
-    val finalResultPath: String = "/yes24/result/final"
+
+    //LDA 수행 결과가 저장될 위치. 이미 존재하는 경로면 수행이 실패한다.
     val ldaModelTargetPath = "/yes24/ldamodel/all"
 
+    //최종 수행 결과가 저장돌 위치. 이미 존재하는 경로면 수행이 실패한다.
+    val finalResultPath: String = "/yes24/result/final"
+
+    //구분자. scala.console.RED
     val delimiter: String = "\\u001B\\[31m"
 
     def main(args: Array[String]) {
