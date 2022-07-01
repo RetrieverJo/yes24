@@ -11,7 +11,7 @@
     <properties>
         <spark-version>2.2.3</spark-version>
         <scala-version>2.10.4</scala-version>
-        <hadoop-client.version>2.6.2</hadoop-client.version>
+        <hadoop-client.version>2.7.0</hadoop-client.version>
         <korean-text.version>4.2.0</korean-text.version>
     </properties>
 
